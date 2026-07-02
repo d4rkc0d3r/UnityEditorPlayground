@@ -39,18 +39,6 @@ namespace d4rkpl4y3r.BakeMeshToTexture
             return Path.GetFileNameWithoutExtension(assetPath);
         }
 
-        private static string GetScriptDirectory()
-        {
-            string[] guids = AssetDatabase.FindAssets("BakeSkinnedMeshToTextureEditor t:MonoScript");
-            if (guids.Length > 0)
-            {
-                string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
-                return Path.GetDirectoryName(scriptPath);
-            }
-
-            return "Assets";
-        }
-
         private static string GetOutputName(SkinnedMeshRenderer smr)
         {
             string assetPath = AssetDatabase.GetAssetPath(smr);
@@ -69,8 +57,21 @@ namespace d4rkpl4y3r.BakeMeshToTexture
 
         private static string GetFullPath(string name)
         {
-            string scriptDir = GetScriptDirectory();
-            return $"{scriptDir}/{name}/MeshData.asset";
+            string[] guids = AssetDatabase.FindAssets("BakeSkinnedMeshToTextureEditor t:MonoScript");
+            if (guids.Length == 0)
+            {
+                return $"Assets/Output/{name}/MeshData.asset";
+            }
+
+            string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+            string scriptDir = Path.GetDirectoryName(scriptPath);
+            string outputDir = Path.Combine(scriptDir, "../Output", name);
+
+            // Resolve the path to remove "../" segments
+            string fullPath = Path.GetFullPath(outputDir);
+            string projectRoot = Application.dataPath.Replace("/Assets", "");
+            string relativePath = Path.GetRelativePath(projectRoot, fullPath).Replace('\\', '/');
+            return $"{relativePath}/MeshData.asset";
         }
 
        private void CalculatePreview()
