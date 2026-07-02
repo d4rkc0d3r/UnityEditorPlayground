@@ -1,0 +1,206 @@
+#pragma kernel InitSeeds
+#pragma kernel JumpFlood
+#pragma kernel PreviewOffsets
+#pragma kernel PreviewThreshold
+#pragma kernel WriteOffsets
+
+Texture2D<float4> _MaskTexture;
+Texture2D<float2> _OffsetInput;
+Texture2D<float4> _SeedInput;
+RWTexture2D<float4> _SeedOutput;
+RWTexture2D<float4> _PreviewOutput;
+RWTexture2D<float2> _OffsetOutput;
+
+int2 _TextureSize;
+int _UseAlpha;
+int _Step;
+float _MaxOffsetLength;
+float _Threshold;
+
+#define GROUP_SIZE_X 8
+#define GROUP_SIZE_Y 8
+
+bool IsInside(int2 pixel)
+{
+    return pixel.x >= 0 && pixel.y >= 0 && pixel.x < _TextureSize.x && pixel.y < _TextureSize.y;
+}
+
+bool IsValidSeed(float4 seed)
+{
+    return seed.z > 0.5;
+}
+
+float3 OklabToLinearSrgb(float3 c)
+{
+    float l_ = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
+    float m_ = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
+    float s_ = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
+    float l = l_ * l_ * l_;
+    float m = m_ * m_ * m_;
+    float s = s_ * s_ * s_;
+    return float3(
+        +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    );
+}
+
+float3 OklabHueToRgb(float hue)
+{
+    float angle = frac(hue) * 6.28318530718;
+    float sinAngle;
+    float cosAngle;
+    sincos(angle, sinAngle, cosAngle);
+
+    float lightness = .8;
+    float chroma = .3;
+    float3 oklab = float3(lightness, chroma * cosAngle, chroma * sinAngle);
+    return saturate(OklabToLinearSrgb(oklab));
+}
+
+float GetDistanceSq(int2 pixel, float4 seed)
+{
+    float2 delta = seed.xy - pixel;
+    return dot(delta, delta);
+}
+
+bool IsBetterCandidate(float4 candidate, float candidateDistanceSq, float4 currentBest, float bestDistanceSq)
+{
+    if (!IsValidSeed(candidate))
+    {
+        return false;
+    }
+
+    if (!IsValidSeed(currentBest))
+    {
+        return true;
+    }
+
+    if (candidateDistanceSq < bestDistanceSq)
+    {
+        return true;
+    }
+
+    if (candidateDistanceSq > bestDistanceSq)
+    {
+        return false;
+    }
+
+    if (candidate.x < currentBest.x)
+    {
+        return true;
+    }
+
+    if (candidate.x > currentBest.x)
+    {
+        return false;
+    }
+
+    return candidate.y < currentBest.y;
+}
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void InitSeeds(uint3 id : SV_DispatchThreadID)
+{
+    int2 pixel = int2(id.xy);
+    if (!IsInside(pixel))
+    {
+        return;
+    }
+
+    float4 mask = _MaskTexture.Load(int3(pixel, 0));
+    float channelValue = (_UseAlpha != 0) ? mask.a : mask.r;
+    _SeedOutput[pixel] = (channelValue >= _Threshold)
+        ? float4(pixel.x, pixel.y, 1.0, 0.0)
+        : float4(-1.0, -1.0, 0.0, 0.0);
+}
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void JumpFlood(uint3 id : SV_DispatchThreadID)
+{
+    int2 pixel = int2(id.xy);
+    if (!IsInside(pixel))
+    {
+        return;
+    }
+
+    float4 bestSeed = _SeedInput.Load(int3(pixel, 0));
+    float bestDistanceSq = IsValidSeed(bestSeed) ? GetDistanceSq(pixel, bestSeed) : 3.402823466e+38F;
+
+    [unroll]
+    for (int offsetY = -1; offsetY <= 1; offsetY++)
+    {
+        [unroll]
+        for (int offsetX = -1; offsetX <= 1; offsetX++)
+        {
+            int2 samplePixel = pixel + int2(offsetX, offsetY) * _Step;
+            if (!IsInside(samplePixel))
+            {
+                continue;
+            }
+
+            float4 candidate = _SeedInput.Load(int3(samplePixel, 0));
+            float candidateDistanceSq = GetDistanceSq(pixel, candidate);
+            if (IsBetterCandidate(candidate, candidateDistanceSq, bestSeed, bestDistanceSq))
+            {
+                bestSeed = candidate;
+                bestDistanceSq = candidateDistanceSq;
+            }
+        }
+    }
+
+    _SeedOutput[pixel] = bestSeed;
+}
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void PreviewThreshold(uint3 id : SV_DispatchThreadID)
+{
+    int2 pixel = int2(id.xy);
+    if (!IsInside(pixel))
+    {
+        return;
+    }
+
+    float4 mask = _MaskTexture.Load(int3(pixel, 0));
+    float channelValue = (_UseAlpha != 0) ? mask.a : mask.r;
+    float active = (channelValue >= _Threshold) ? 1.0 : 0.0;
+    _PreviewOutput[pixel] = float4(active, active, active, 1.0);
+}
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void PreviewOffsets(uint3 id : SV_DispatchThreadID)
+{
+    int2 pixel = int2(id.xy);
+    if (!IsInside(pixel))
+    {
+        return;
+    }
+
+    float4 mask = _MaskTexture.Load(int3(pixel, 0));
+    float channelValue = (_UseAlpha != 0) ? mask.a : mask.r;
+    if (channelValue >= _Threshold)
+    {
+        _PreviewOutput[pixel] = float4(1.0, 1.0, 1.0, 1.0);
+        return;
+    }
+
+    float2 offset = _OffsetInput.Load(int3(pixel, 0));
+    float hue = length(offset) / 128.0;
+    float3 color = OklabHueToRgb(hue);
+    _PreviewOutput[pixel] = float4(color, 1.0);
+}
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void WriteOffsets(uint3 id : SV_DispatchThreadID)
+{
+    int2 pixel = int2(id.xy);
+    if (!IsInside(pixel))
+    {
+        return;
+    }
+
+    float4 seed = _SeedInput.Load(int3(pixel, 0));
+    _OffsetOutput[pixel] = IsValidSeed(seed)
+        ? seed.xy - pixel
+        : float2(0.0, 0.0);
+}
