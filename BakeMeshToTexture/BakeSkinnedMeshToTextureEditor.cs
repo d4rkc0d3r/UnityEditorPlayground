@@ -414,6 +414,14 @@ namespace d4rkpl4y3r.BakeMeshToTexture
             renderMat.SetFloat("_DataTexWidth", width);
             renderMat.SetFloat("_DataTexHeight", height);
 
+            // Copy _MainTex from source material
+            if (_skinnedMeshRenderer.sharedMaterial != null)
+            {
+                Texture mainTex = _skinnedMeshRenderer.sharedMaterial.GetTexture("_MainTex");
+                if (mainTex != null)
+                    renderMat.SetTexture("_MainTex", mainTex);
+            }
+
             // Calculate tessellation: each bone point generates tessX * tessY * 2 triangles
             // We need: boneCount * tessX * tessY * 2 >= triCount
             // So: tess = ceil(sqrt(triCount / 2 / boneCount))
