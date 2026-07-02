@@ -74,6 +74,78 @@ namespace d4rkpl4y3r.BakeMeshToTexture
             return $"{relativePath}/MeshData.asset";
         }
 
+        private static string GetOutputDirectory(string name)
+        {
+            return Path.GetDirectoryName(GetFullPath(name));
+        }
+
+        private bool HasExistingOutput()
+        {
+            if (_skinnedMeshRenderer == null || string.IsNullOrEmpty(_outputName))
+                return false;
+
+            string directory = GetOutputDirectory(_outputName);
+            string meshDataPath = GetFullPath(_outputName);
+            string bonePointMeshPath = Path.Combine(directory, "BonePointMesh.asset");
+            string renderMatPath = Path.Combine(directory, "RenderMat.asset");
+
+            // Check if any output assets exist
+            if (AssetDatabase.LoadAssetAtPath<Object>(meshDataPath) != null ||
+                AssetDatabase.LoadAssetAtPath<Object>(bonePointMeshPath) != null ||
+                AssetDatabase.LoadAssetAtPath<Object>(renderMatPath) != null)
+                return true;
+
+            // Check if BonePointMesh GameObject exists as sibling
+            if (_skinnedMeshRenderer.transform.parent != null)
+            {
+                for (int i = 0; i < _skinnedMeshRenderer.transform.parent.childCount; i++)
+                {
+                    if (_skinnedMeshRenderer.transform.parent.GetChild(i).name == "BonePointMesh")
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ClearExistingOutput()
+        {
+            if (_skinnedMeshRenderer == null || string.IsNullOrEmpty(_outputName))
+                return;
+
+            string directory = GetOutputDirectory(_outputName);
+            string meshDataPath = GetFullPath(_outputName);
+            string bonePointMeshPath = Path.Combine(directory, "BonePointMesh.asset");
+            string renderMatPath = Path.Combine(directory, "RenderMat.asset");
+
+            // Delete existing assets
+            string[] assetPaths = { meshDataPath, bonePointMeshPath, renderMatPath };
+            foreach (string assetPath in assetPaths)
+            {
+                Object existing = AssetDatabase.LoadAssetAtPath<Object>(assetPath);
+                if (existing != null)
+                {
+                    AssetDatabase.DeleteAsset(assetPath);
+                }
+            }
+
+            // Delete existing BonePointMesh GameObject
+            if (_skinnedMeshRenderer.transform.parent != null)
+            {
+                for (int i = 0; i < _skinnedMeshRenderer.transform.parent.childCount; i++)
+                {
+                    Transform child = _skinnedMeshRenderer.transform.parent.GetChild(i);
+                    if (child.name == "BonePointMesh")
+                    {
+                        GameObject.DestroyImmediate(child.gameObject);
+                        break;
+                    }
+                }
+            }
+
+            AssetDatabase.Refresh();
+        }
+
        private void CalculatePreview()
         {
             if (_skinnedMeshRenderer == null)
@@ -168,7 +240,9 @@ namespace d4rkpl4y3r.BakeMeshToTexture
             EditorGUILayout.Space();
 
             EditorGUI.BeginDisabledGroup(_skinnedMeshRenderer == null);
-            if (GUILayout.Button("Bake"))
+            bool hasExisting = HasExistingOutput();
+            string buttonText = hasExisting ? "Bake (override existing)" : "Bake";
+            if (GUILayout.Button(buttonText))
             {
                 Bake();
             }
@@ -182,6 +256,9 @@ namespace d4rkpl4y3r.BakeMeshToTexture
                 EditorUtility.DisplayDialog("Bake Skinned Mesh to Texture", "Please select a Skinned Mesh Renderer.", "OK");
                 return;
             }
+
+            // Clear existing output if it exists
+            ClearExistingOutput();
 
             // Bake mesh from SkinnedMeshRenderer
             Mesh mesh = new Mesh();
@@ -354,11 +431,7 @@ namespace d4rkpl4y3r.BakeMeshToTexture
             // Create the texture asset
             AssetDatabase.CreateAsset(texture, outputPath);
 
-            Object asset = AssetDatabase.LoadAssetAtPath<Object>(outputPath);
-            if (asset != null)
-            {
-                EditorGUIUtility.PingObject(asset);
-            }
+            Object textureAsset = AssetDatabase.LoadAssetAtPath<Object>(outputPath);
 
             // Create bone point mesh
             Mesh bonePointMesh = new Mesh();
@@ -432,6 +505,11 @@ namespace d4rkpl4y3r.BakeMeshToTexture
             AssetDatabase.CreateAsset(renderMat, Path.Combine(directory, "RenderMat.asset"));
 
             bonePointSMR.materials = new[] { renderMat };
+
+            if (textureAsset != null)
+            {
+                EditorGUIUtility.PingObject(textureAsset);
+            }
 
             EditorUtility.DisplayDialog("Bake Skinned Mesh to Texture",
                 $"Successfully baked skinned mesh '{_skinnedMeshRenderer.gameObject.name}' to:\n{outputPath}\n\n" +
