@@ -316,14 +316,14 @@ public class ReflectionInspectorEditor : EditorWindow
 
     private void DrawTypeBox(ref bool foldout, string title, List<TypeEntry> entries, Comparer<TypeEntry> comparer)
     {
+        if (entries.Count == 0)
+            return;
+
         entries.Sort(comparer);
 
         using (new EditorGUILayout.VerticalScope("box"))
         {
             foldout = EditorGUILayout.Foldout(foldout, $"{title} ({entries.Count})", true, EditorStyles.boldLabel);
-
-            if (entries.Count == 0)
-                return;
 
             if (!foldout)
                 return;
