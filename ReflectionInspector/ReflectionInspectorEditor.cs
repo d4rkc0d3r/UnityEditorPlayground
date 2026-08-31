@@ -41,6 +41,9 @@ public class ReflectionInspectorEditor : EditorWindow
     private bool structFoldout = true;
     private bool classFoldout = true;
     private bool showFullName = false;
+    private string baseTypeFilter = "";
+    private string baseTypeResolveKey = null;
+    private Type resolvedBaseType;
 
     [MenuItem("Tools/d4rkpl4y3r/Reflection Inspector")]
     public static void OpenWindow()
@@ -75,6 +78,8 @@ public class ReflectionInspectorEditor : EditorWindow
             .OrderBy(e => e.Name, StringComparer.Ordinal)
             .ToList();
         typeCache.Clear();
+        baseTypeResolveKey = null;
+        resolvedBaseType = null;
     }
 
     private List<TypeEntry> GetTypeEntries(Assembly assembly)
@@ -95,19 +100,19 @@ public class ReflectionInspectorEditor : EditorWindow
 
         foreach (var type in types)
         {
-            if (type == null || type.IsInterface || type.IsArray)
+            if (type == null || type.IsArray)
                 continue;
             string kind;
             if (type.IsEnum)
                 kind = "Enum";
             else if (type.IsValueType)
                 kind = "Struct";
-            else
-            {
-                if (!type.IsClass)
-                    continue;
+            else if (type.IsClass)
                 kind = "Class";
-            }
+            else if (type.IsInterface)
+                kind = "Interface";
+            else
+                continue;
             var entry = new TypeEntry
             {
                 Type = type,
@@ -182,6 +187,29 @@ public class ReflectionInspectorEditor : EditorWindow
     {
         typeFilter.DrawGUI("Type Filter");
 
+        ResolveBaseType();
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            baseTypeFilter = EditorGUILayout.TextField("Base Type", baseTypeFilter);
+
+            using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(baseTypeFilter)))
+            {
+                if (GUILayout.Button("X", GUILayout.ExpandWidth(false)))
+                {
+                    baseTypeFilter = "";
+                }
+            }
+        }
+
+        if (!string.IsNullOrEmpty(baseTypeFilter) && resolvedBaseType == null)
+        {
+            var prevContentColor = GUI.contentColor;
+            GUI.contentColor = new Color(1f, 1f, 0.3f);
+            EditorGUILayout.LabelField($"No type named '{baseTypeFilter}' found in the loaded assemblies");
+            GUI.contentColor = prevContentColor;
+        }
+
         showFullName = GUILayout.Toggle(showFullName, "Full Name", GUI.skin.toggle);
 
         var deduplicated = new Dictionary<string, TypeEntry>();
@@ -214,6 +242,9 @@ public class ReflectionInspectorEditor : EditorWindow
         var classEntries = new List<TypeEntry>();
         foreach (var entry in deduplicated.Values)
         {
+            if (!string.IsNullOrEmpty(baseTypeFilter)
+                && (resolvedBaseType == null || !resolvedBaseType.IsAssignableFrom(entry.Type)))
+                continue;
             var filterTarget = showFullName ? entry.FullName : entry.Name;
             if (!typeFilter.Matches(filterTarget))
                 continue;
@@ -225,8 +256,10 @@ public class ReflectionInspectorEditor : EditorWindow
                 case "Struct":
                     structEntries.Add(entry);
                     break;
-                default:
+                case "Class":
                     classEntries.Add(entry);
+                    break;
+                default:
                     break;
             }
         }
@@ -257,6 +290,30 @@ public class ReflectionInspectorEditor : EditorWindow
         DrawTypeBox(ref classFoldout, "Classes", classEntries, typeComparer);
     }
 
+    private void ResolveBaseType()
+    {
+        var resolveKey = baseTypeFilter;
+        if (baseTypeResolveKey == resolveKey)
+            return;
+        baseTypeResolveKey = resolveKey;
+        resolvedBaseType = null;
+        if (string.IsNullOrEmpty(baseTypeFilter) || cachedAssemblies == null)
+            return;
+        foreach (var assemblyEntry in cachedAssemblies)
+        {
+            foreach (var entry in GetTypeEntries(assemblyEntry.Assembly))
+            {
+                if (string.Equals(entry.FullName, baseTypeFilter, StringComparison.OrdinalIgnoreCase))
+                {
+                    resolvedBaseType = entry.Type;
+                    break;
+                }
+            }
+            if (resolvedBaseType != null)
+                break;
+        }
+    }
+
     private void DrawTypeBox(ref bool foldout, string title, List<TypeEntry> entries, Comparer<TypeEntry> comparer)
     {
         entries.Sort(comparer);
@@ -281,8 +338,10 @@ public class ReflectionInspectorEditor : EditorWindow
                         ? $" ({entry.AssemblyNames.Distinct().Count()})"
                         : "";
                     var displayName = (showFullName ? entry.FullName : entry.Name) + countSuffix;
-                    GUILayout.Label(new GUIContent(displayName, assemblyTooltip),
+                    GUILayout.Label(new GUIContent(displayName, assemblyTooltip + "\nClick to set as Base Type"),
                         EditorStyles.label, GUILayout.Height(18f));
+                    if (AV3Helper.ClickableLastRect())
+                        baseTypeFilter = entry.FullName;
                 }
             }
 
