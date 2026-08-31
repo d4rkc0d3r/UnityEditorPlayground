@@ -19,6 +19,7 @@ public class ReflectionInspectorEditor : EditorWindow
     {
         public Type Type;
         public string Name;
+        public string FullName;
         public string AssemblyName;
         public string Kind;
     }
@@ -28,7 +29,8 @@ public class ReflectionInspectorEditor : EditorWindow
     {
         SmallButtons = true,
         IsRegex = true,
-        Text = "^(?!<)" // hide compiler-generated types (e.g. <>c__DisplayClass)
+        // hide compiler-generated types (<), nested types (+) and generic types (`)
+        Text = "^[^+`<]+$"
     };
     private SplitterState splitter = new();
     private List<AssemblyEntry> cachedAssemblies;
@@ -38,6 +40,7 @@ public class ReflectionInspectorEditor : EditorWindow
     private bool enumFoldout = true;
     private bool structFoldout = true;
     private bool classFoldout = true;
+    private bool showFullName = false;
 
     [MenuItem("Tools/d4rkpl4y3r/Reflection Inspector")]
     public static void OpenWindow()
@@ -109,6 +112,7 @@ public class ReflectionInspectorEditor : EditorWindow
             {
                 Type = type,
                 Name = type.Name,
+                FullName = type.FullName ?? type.Name,
                 AssemblyName = assembly.GetName().Name,
                 Kind = kind
             });
@@ -177,6 +181,8 @@ public class ReflectionInspectorEditor : EditorWindow
     {
         typeFilter.DrawGUI("Type Filter");
 
+        showFullName = GUILayout.Toggle(showFullName, "Full Name", GUI.skin.toggle);
+
         var enumEntries = new List<TypeEntry>();
         var structEntries = new List<TypeEntry>();
         var classEntries = new List<TypeEntry>();
@@ -185,7 +191,8 @@ public class ReflectionInspectorEditor : EditorWindow
         {
             foreach (var entry in GetTypeEntries(assemblyEntry.Assembly))
             {
-                if (!typeFilter.Matches(entry.Name))
+                var filterTarget = showFullName ? entry.FullName : entry.Name;
+                if (!typeFilter.Matches(filterTarget))
                     continue;
                 switch (entry.Kind)
                 {
@@ -219,13 +226,19 @@ public class ReflectionInspectorEditor : EditorWindow
             return;
         }
 
-        DrawTypeBox(ref enumFoldout, "Enums", enumEntries);
-        DrawTypeBox(ref structFoldout, "Structs", structEntries);
-        DrawTypeBox(ref classFoldout, "Classes", classEntries);
+        var typeComparer = showFullName
+            ? Comparer<TypeEntry>.Create((a, b) => string.CompareOrdinal(a.FullName, b.FullName))
+            : Comparer<TypeEntry>.Create((a, b) => string.CompareOrdinal(a.Name, b.Name));
+
+        DrawTypeBox(ref enumFoldout, "Enums", enumEntries, typeComparer);
+        DrawTypeBox(ref structFoldout, "Structs", structEntries, typeComparer);
+        DrawTypeBox(ref classFoldout, "Classes", classEntries, typeComparer);
     }
 
-    private void DrawTypeBox(ref bool foldout, string title, List<TypeEntry> entries)
+    private void DrawTypeBox(ref bool foldout, string title, List<TypeEntry> entries, Comparer<TypeEntry> comparer)
     {
+        entries.Sort(comparer);
+
         using (new EditorGUILayout.VerticalScope("box"))
         {
             foldout = EditorGUILayout.Foldout(foldout, $"{title} ({entries.Count})", true, EditorStyles.boldLabel);
@@ -241,7 +254,11 @@ public class ReflectionInspectorEditor : EditorWindow
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     GUILayout.Space(ColumnGrid.InnerIndent);
-                    GUILayout.Label(new GUIContent(entry.Name, $"{entry.Type.FullName}\n[{entry.AssemblyName}]"),
+                    var displayName = showFullName ? entry.FullName : entry.Name;
+                    var tooltip = showFullName
+                        ? $"[{entry.AssemblyName}]"
+                        : $"{entry.Type.FullName}\n[{entry.AssemblyName}]";
+                    GUILayout.Label(new GUIContent(displayName, tooltip),
                         EditorStyles.label, GUILayout.Height(18f));
                 }
             }
