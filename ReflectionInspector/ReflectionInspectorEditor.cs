@@ -15,13 +15,13 @@ public class ReflectionInspectorEditor : EditorWindow
         public string Name;
     }
 
-    private struct TypeEntry
+    private class TypeEntry
     {
         public Type Type;
         public string Name;
         public string FullName;
-        public string AssemblyName;
         public string Kind;
+        public List<string> AssemblyNames = new();
     }
 
     private TextFilter assemblyFilter = new() { SmallButtons = true };
@@ -108,14 +108,15 @@ public class ReflectionInspectorEditor : EditorWindow
                     continue;
                 kind = "Class";
             }
-            entries.Add(new TypeEntry
+            var entry = new TypeEntry
             {
                 Type = type,
                 Name = type.Name,
                 FullName = type.FullName ?? type.Name,
-                AssemblyName = assembly.GetName().Name,
                 Kind = kind
-            });
+            };
+            entry.AssemblyNames.Add(assembly.GetName().Name);
+            entries.Add(entry);
         }
         entries.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
         typeCache[assembly] = entries;
@@ -183,29 +184,50 @@ public class ReflectionInspectorEditor : EditorWindow
 
         showFullName = GUILayout.Toggle(showFullName, "Full Name", GUI.skin.toggle);
 
-        var enumEntries = new List<TypeEntry>();
-        var structEntries = new List<TypeEntry>();
-        var classEntries = new List<TypeEntry>();
-
+        var deduplicated = new Dictionary<string, TypeEntry>();
         foreach (var assemblyEntry in filteredAssemblies)
         {
             foreach (var entry in GetTypeEntries(assemblyEntry.Assembly))
             {
-                var filterTarget = showFullName ? entry.FullName : entry.Name;
-                if (!typeFilter.Matches(filterTarget))
-                    continue;
-                switch (entry.Kind)
+                if (!deduplicated.TryGetValue(entry.FullName, out var existing))
                 {
-                    case "Enum":
-                        enumEntries.Add(entry);
-                        break;
-                    case "Struct":
-                        structEntries.Add(entry);
-                        break;
-                    default:
-                        classEntries.Add(entry);
-                        break;
+                    // fresh copy so we never mutate the per-assembly cache
+                    existing = new TypeEntry
+                    {
+                        Type = entry.Type,
+                        Name = entry.Name,
+                        FullName = entry.FullName,
+                        Kind = entry.Kind
+                    };
+                    existing.AssemblyNames.AddRange(entry.AssemblyNames);
+                    deduplicated[entry.FullName] = existing;
                 }
+                else
+                {
+                    existing.AssemblyNames.AddRange(entry.AssemblyNames);
+                }
+            }
+        }
+
+        var enumEntries = new List<TypeEntry>();
+        var structEntries = new List<TypeEntry>();
+        var classEntries = new List<TypeEntry>();
+        foreach (var entry in deduplicated.Values)
+        {
+            var filterTarget = showFullName ? entry.FullName : entry.Name;
+            if (!typeFilter.Matches(filterTarget))
+                continue;
+            switch (entry.Kind)
+            {
+                case "Enum":
+                    enumEntries.Add(entry);
+                    break;
+                case "Struct":
+                    structEntries.Add(entry);
+                    break;
+                default:
+                    classEntries.Add(entry);
+                    break;
             }
         }
 
@@ -254,11 +276,12 @@ public class ReflectionInspectorEditor : EditorWindow
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     GUILayout.Space(ColumnGrid.InnerIndent);
-                    var displayName = showFullName ? entry.FullName : entry.Name;
-                    var tooltip = showFullName
-                        ? $"[{entry.AssemblyName}]"
-                        : $"{entry.Type.FullName}\n[{entry.AssemblyName}]";
-                    GUILayout.Label(new GUIContent(displayName, tooltip),
+                    var assemblyTooltip = string.Join("\n", entry.AssemblyNames.Distinct().OrderBy(x => x, StringComparer.Ordinal));
+                    var countSuffix = entry.AssemblyNames.Distinct().Count() > 1
+                        ? $" ({entry.AssemblyNames.Distinct().Count()})"
+                        : "";
+                    var displayName = (showFullName ? entry.FullName : entry.Name) + countSuffix;
+                    GUILayout.Label(new GUIContent(displayName, assemblyTooltip),
                         EditorStyles.label, GUILayout.Height(18f));
                 }
             }
