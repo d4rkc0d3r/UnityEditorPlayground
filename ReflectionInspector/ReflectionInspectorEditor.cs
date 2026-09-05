@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
 using d4rkpl4y3r.AV3ToggleUtil.Util;
@@ -314,6 +315,21 @@ public class ReflectionInspectorEditor : EditorWindow
         }
     }
 
+    private string FormatStringList(List<TypeEntry> entries)
+    {
+        var sb = new StringBuilder();
+        sb.Append("new()\n{");
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var name = showFullName ? entries[i].FullName : entries[i].Name;
+            sb.Append($"\n    \"{name}\"");
+            if (i < entries.Count - 1)
+                sb.Append(',');
+        }
+        sb.Append("\n}");
+        return sb.ToString();
+    }
+
     private void DrawTypeBox(ref bool foldout, string title, List<TypeEntry> entries, Comparer<TypeEntry> comparer)
     {
         if (entries.Count == 0)
@@ -323,7 +339,14 @@ public class ReflectionInspectorEditor : EditorWindow
 
         using (new EditorGUILayout.VerticalScope("box"))
         {
-            foldout = EditorGUILayout.Foldout(foldout, $"{title} ({entries.Count})", true, EditorStyles.boldLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                foldout = EditorGUILayout.Foldout(foldout, $"{title} ({entries.Count})", true, EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("Copy All", "Copy all filtered names as a C# collection initializer for a List<string>: new() { ... }"),
+                    GUILayout.ExpandWidth(false)))
+                    GUIUtility.systemCopyBuffer = FormatStringList(entries);
+            }
 
             if (!foldout)
                 return;
