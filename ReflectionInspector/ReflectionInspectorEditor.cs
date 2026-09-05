@@ -41,8 +41,9 @@ public class ReflectionInspectorEditor : EditorWindow
     private bool enumFoldout = true;
     private bool structFoldout = true;
     private bool classFoldout = true;
-    private bool showFullName = false;
+    private bool showFullName = true;
     private string baseTypeFilter = "";
+    private bool settingsInitialized = false;
     private string baseTypeResolveKey = null;
     private Type resolvedBaseType;
 
@@ -59,6 +60,12 @@ public class ReflectionInspectorEditor : EditorWindow
     {
         titleContent = new GUIContent("Reflection Inspector");
         minSize = new Vector2(640f, 320f);
+        if (!settingsInitialized)
+        {
+            splitter.leftPanelWidth = 300f;
+            baseTypeFilter = "UnityEngine.Component";
+            settingsInitialized = true;
+        }
         RefreshAssemblies();
     }
 
