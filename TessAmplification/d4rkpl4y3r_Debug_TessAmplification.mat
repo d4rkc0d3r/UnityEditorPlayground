@@ -26,11 +26,12 @@ Material:
     m_Ints: []
     m_Floats:
     - _LerpToLinear: 1
-    - _TessCenterA: 4
-    - _TessCenterB: 4
+    - _TessCenterA: 6
+    - _TessCenterB: 6
     - _TessEdgeA: 14
     - _TessEdgeB: 18
     - _TessEdgeC: 15
     - _TessEdgeD: 12
+    - _UseQuadTess: 0
     m_Colors: []
   m_BuildTextureStacks: []

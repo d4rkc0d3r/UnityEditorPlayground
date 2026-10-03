@@ -199,7 +199,8 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
                     float w2 = uvCenter.y;
                     float subSection = (w0 <= w1 && w0 <= w2) ? 2 : (w1 <= w2 ? 1 : 0);
                     float n = floor(_TessCenterA / 2);
-                    float totalCount = 6 * n * n + (frac(_TessCenterA / 2) > 0 ? 6 * n + 1 : 0);
+                    float odd = _TessCenterA - 2 * n;
+                    float totalCount = 6 * n * n + odd * (6 * n + 1);
                     float id = subSection * floor(totalCount / 3);
                     float2 uvScaled = uvCenter;
 
@@ -216,17 +217,17 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
                     }
 
                     // map tri (0,0),(1,0),(1/3,1/3) -> (0,1),(1,1),(0.5,0)
-                    uvScaled = n * float2(uvScaled.x + uvScaled.y * 0.5, 1 - 3 * uvScaled.y);
-                    float row = floor(uvScaled.y);
-                    uvScaled.y = row + 0.5;
-                    //TODO: make this work for odd _TessCenterA values. Currently it only works for even values.
-                    // there is also one final triangle in the center that needs special handling in that case.
-                    // it should get id = totalCount - 1, and be reasonably close to 1/3,1/3 coords.
-                    float triInRow = 2 + row * 4;
-                    float triBeforeRow = 2 * row * row;
+                    uvScaled = (_TessCenterA / 2) * float2(uvScaled.x + uvScaled.y * 0.5, 1 - 3 * uvScaled.y);
+                    // Odd factors leave an inner triangle and shift the subsection rows by half a step.
+                    float row = floor(uvScaled.y - 0.5 * odd);
+                    float triBeforeRow = 2 * row * (row + odd);
                     float stepSize = 0.25;
                     float idInRow = floor(uvScaled.x / stepSize) - 1 - 2 * (n - row - 1);
                     id += triBeforeRow + idInRow;
+                    if (odd > 0 && uvScaled.y < 0.5)
+                    {
+                        id = totalCount - 1;
+                    }
                 #endif
 
                 float tileWidth = sqrt(2) / sqrt(totalCount);
@@ -235,7 +236,7 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
                 //offset += (subSection != 1 ? float3(0, 5 * _LerpToLinear, 0) : 0);
                 //offset += lerp(center, float3(uvCenter, 0), subSection == 1 ? _LerpToLinear : 0);
 
-				o.color = float4(0,GammaToLinearSpaceExact(id / (totalCount - 1)),0,1);
+				o.color = float4(0,GammaToLinearSpaceExact(id / max(totalCount - 1, 1)),0,1);
                 o.color = float4(
                     GammaToLinearSpaceExact(uvCenter.x),
                     GammaToLinearSpaceExact(uvCenter.y),
