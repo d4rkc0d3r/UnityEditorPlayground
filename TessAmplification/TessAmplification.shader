@@ -4,7 +4,9 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
 		[IntRange]_TessCenterA("Center Tess 0", Range(0,64)) = 3
 		[IntRange]_TessCenterB("Center Tess 1", Range(0,64)) = 3
         _LerpToLinear("Lerp to Linear", Range(0,1)) = 0
+        _AnimationTime("Animation Time", Float) = 10
         [Toggle]_UseQuadTess("Use Quad Tess", Float) = 1
+		[KeywordEnum(Point, Triangle, Quad)] INPUT_TOPOLOGY("Input Topology", Float) = 0
 	}
 	SubShader {
 
@@ -15,8 +17,10 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
 		float _TessCenterA;
 		float _TessCenterB;
         float _LerpToLinear;
+        float _AnimationTime;
 
         #pragma shader_feature_local _USEQUADTESS_ON
+        #pragma shader_feature_local INPUT_TOPOLOGY_POINT INPUT_TOPOLOGY_TRIANGLE INPUT_TOPOLOGY_QUAD
 
 		struct appdata
 		{
@@ -68,7 +72,13 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
 			return (v2h)0;
 		}
 
-        #define PATCH_SIZE 1
+        #if defined(INPUT_TOPOLOGY_TRIANGLE)
+            #define PATCH_SIZE 3
+        #elif defined(INPUT_TOPOLOGY_QUAD)
+            #define PATCH_SIZE 4
+        #else
+            #define PATCH_SIZE 1
+        #endif
 
 		tessFactors hullConstant(InputPatch<v2h, PATCH_SIZE> I , uint primID : SV_PrimitiveID)
 		{
@@ -230,11 +240,17 @@ Shader "d4rkpl4y3r/Debug/TessAmplification"
                     }
                 #endif
 
+                float animState = _LerpToLinear;
+
+                if (_AnimationTime > 0)
+                {
+                    float timeline = frac(_Time.y / _AnimationTime);
+                    animState = smoothstep(0.1, 0.4, timeline) * (1 - smoothstep(0.6, 0.9, timeline));
+                }
+
                 float tileWidth = sqrt(2) / sqrt(totalCount);
-                offset += lerp(center, float3((id - (totalCount - 1) / 2) * tileWidth, 0, 0), _LerpToLinear);
-                offset += center * (_LerpToLinear * (1 - _LerpToLinear)) * 4;
-                //offset += (subSection != 1 ? float3(0, 5 * _LerpToLinear, 0) : 0);
-                //offset += lerp(center, float3(uvCenter, 0), subSection == 1 ? _LerpToLinear : 0);
+                offset += lerp(center, float3((id - (totalCount - 1) / 2) * tileWidth, 0, 0), animState);
+                offset += center * (animState * (1 - animState)) * 4;
 
 				o.color = float4(0,GammaToLinearSpaceExact(id / max(totalCount - 1, 1)),0,1);
                 o.color = float4(
