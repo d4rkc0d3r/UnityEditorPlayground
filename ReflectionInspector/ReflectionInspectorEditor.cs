@@ -27,6 +27,8 @@ namespace d4rkpl4y3r.ReflectionInspector
             public List<string> AssemblyNames = new();
         }
 
+        private const int maxEntriesPerBox = 200;
+
         private TextFilter assemblyFilter = new() { SmallButtons = true };
         private TextFilter typeFilter = new()
         {
@@ -35,7 +37,7 @@ namespace d4rkpl4y3r.ReflectionInspector
             // hide compiler-generated types (<), nested types (+) and generic types (`)
             Text = "^[^+`<]+$"
         };
-        private SplitterState splitter = new();
+        private SplitterState splitter = new() { leftPanelWidth = 350f };
         private List<AssemblyEntry> cachedAssemblies;
         private Dictionary<Assembly, List<TypeEntry>> typeCache = new();
         private Vector2 leftScrollPos;
@@ -44,8 +46,7 @@ namespace d4rkpl4y3r.ReflectionInspector
         private bool structFoldout = true;
         private bool classFoldout = true;
         private bool showFullName = true;
-        private string baseTypeFilter = "";
-        private bool settingsInitialized = false;
+        private string baseTypeFilter = "UnityEngine.Component";
         private string baseTypeResolveKey = null;
         private Type resolvedBaseType;
 
@@ -62,12 +63,6 @@ namespace d4rkpl4y3r.ReflectionInspector
         {
             titleContent = new GUIContent("Reflection Inspector");
             minSize = new Vector2(640f, 320f);
-            if (!settingsInitialized)
-            {
-                splitter.leftPanelWidth = 300f;
-                baseTypeFilter = "UnityEngine.Component";
-                settingsInitialized = true;
-            }
             RefreshAssemblies();
         }
 
@@ -140,6 +135,8 @@ namespace d4rkpl4y3r.ReflectionInspector
 
         private void OnGUI()
         {
+            McpServerPrefs.Enabled = EditorGUILayout.ToggleLeft("MCP Server", McpServerPrefs.Enabled);
+
             if (cachedAssemblies == null)
                 return;
 
@@ -190,8 +187,6 @@ namespace d4rkpl4y3r.ReflectionInspector
             if (filteredAssemblies.Count == 0)
                 EditorGUILayout.HelpBox("No assemblies match the filter.", MessageType.None);
         }
-
-        private const int maxEntriesPerBox = 500;
 
         private void DrawTypePanel(List<AssemblyEntry> filteredAssemblies)
         {

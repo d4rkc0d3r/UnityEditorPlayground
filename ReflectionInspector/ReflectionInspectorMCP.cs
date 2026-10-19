@@ -18,6 +18,7 @@ namespace d4rkpl4y3r.ReflectionInspector
         static HttpListener _listener;
         static CancellationTokenSource _cts;
         static int _port = 8251;
+        static bool _running;
 
         private const string LIST_ASSEMBLIES_TOOL_NAME = "list_assemblies";
         private const string SEARCH_TYPES_TOOL_NAME = "search_types";
@@ -26,7 +27,11 @@ namespace d4rkpl4y3r.ReflectionInspector
         [InitializeOnLoad]
         private class OnLoadHook
         {
-            static OnLoadHook() => Start();
+            static OnLoadHook()
+            {
+                if (McpServerPrefs.Enabled)
+                    Start();
+            }
         }
 
         public static void Start()
@@ -40,6 +45,11 @@ namespace d4rkpl4y3r.ReflectionInspector
         public static void Stop()
         {
             Application.quitting -= Stop;
+            if (_running)
+            {
+                _running = false;
+                Debug.Log("[ReflectionInspectorMCP] Server stopped.");
+            }
             _cts?.Cancel();
             try { _listener?.Close(); } catch { }
         }
@@ -51,6 +61,7 @@ namespace d4rkpl4y3r.ReflectionInspector
             try
             {
                 _listener.Start();
+                _running = true;
                 Debug.Log($"[ReflectionInspectorMCP] Listening on http://localhost:{_port}/");
 
                 while (!ct.IsCancellationRequested)
@@ -314,6 +325,45 @@ namespace d4rkpl4y3r.ReflectionInspector
                 ["content"] = new JArray { new JObject { ["type"] = "text", ["text"] = text } },
                 ["isError"] = false
             });
+        }
+    }
+
+    /// <summary>
+    /// Editor pref controlling whether the MCP server runs. Default: off.
+    /// Setting the value also starts/stops the server immediately.
+    /// </summary>
+    public static class McpServerPrefs
+    {
+        public const string PrefsKey = "ReflectionInspector.McpServerEnabled";
+
+        public static bool Enabled
+        {
+            get => EditorPrefs.GetBool(PrefsKey, false);
+            set
+            {
+                if (value == Enabled)
+                    return;
+                EditorPrefs.SetBool(PrefsKey, value);
+                if (value)
+                    ReflectionInspectorMCP.Start();
+                else
+                    ReflectionInspectorMCP.Stop();
+            }
+        }
+
+        [SettingsProvider]
+        private static SettingsProvider CreatePrefsProvider()
+        {
+            var provider = new SettingsProvider("Preferences/Reflection Inspector", SettingsScope.User)
+            {
+                label = "Reflection Inspector",
+                guiHandler = _ =>
+                {
+                    McpServerPrefs.Enabled = EditorGUILayout.ToggleLeft("Enable MCP Server", Enabled);
+                }
+            };
+            provider.keywords = new[] { "reflection", "inspector", "mcp" };
+            return provider;
         }
     }
 }
