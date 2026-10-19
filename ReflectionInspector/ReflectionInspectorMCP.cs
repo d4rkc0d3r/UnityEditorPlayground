@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -203,6 +204,11 @@ namespace d4rkpl4y3r.ReflectionInspector
             });
         }
 
+        private static JObject Prop(string type) => new JObject { ["type"] = type };
+
+        private static JObject Prop(string type, string description) =>
+            new JObject { ["type"] = type, ["description"] = description };
+
         private static string BuildToolsList(string idRaw)
         {
             return BuildResultJson(idRaw, new JObject
@@ -211,39 +217,105 @@ namespace d4rkpl4y3r.ReflectionInspector
                 {
                     new JObject
                     {
-                        ["name"] = TEST_TOOL_NAME,
-                        ["description"] = "Smoke test tool. Returns a basic OK response to verify the MCP server is reachable.",
+                        ["name"] = LIST_ASSEMBLIES_TOOL_NAME,
+                        ["description"] = "Lists the names of all assemblies currently loaded in the Unity editor.",
+                        ["inputSchema"] = new JObject { ["type"] = "object", ["properties"] = new JObject() }
+                    },
+                    new JObject
+                    {
+                        ["name"] = SEARCH_TYPES_TOOL_NAME,
+                        ["description"] = "Searches C# types in the loaded assemblies by regex. Returns a numbered, paged list of matches (kind, full name, assembly, base type). Use inspect_type on a match for details.",
                         ["inputSchema"] = new JObject
                         {
                             ["type"] = "object",
-                            ["properties"] = new JObject(),
+                            ["properties"] = new JObject
+                            {
+                                ["query"] = Prop("string", "Regex matched case-insensitively against the type's simple name, or against the full name when it contains '.'."),
+                                ["kind"] = new JObject { ["type"] = "string", ["enum"] = new JArray("Class", "Struct", "Enum", "Interface"), ["description"] = "Optional: only this kind of type." },
+                                ["assembly"] = Prop("string", "Optional: case-insensitive substring of the assembly name."),
+                                ["derivedFrom"] = Prop("string", "Optional: full name of a base type; only types assignable to it are returned."),
+                                ["includePrivate"] = new JObject { ["type"] = "boolean", ["description"] = "Optional, default false: also include non-public types." },
+                                ["range"] = Prop("string", $"Optional, default '1-{ReflectionTools.DefaultPageSize}': which numbered matches to return, e.g. '31-42'.")
+                            },
+                            ["required"] = new JArray("query")
+                        }
+                    },
+                    new JObject
+                    {
+                        ["name"] = INSPECT_TYPE_TOOL_NAME,
+                        ["description"] = "Shows detailed information about a C# type: header (kind, assembly, base, inheritance chain, interfaces, attributes) plus numbered, paged sections of fields, properties, methods and constructors. Use ranges to fetch more items.",
+                        ["inputSchema"] = new JObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JObject
+                            {
+                                ["typeName"] = Prop("string", "Type to inspect. Fuzzy match: exact full name, simple name, full-name suffix, or substring."),
+                                ["includePrivate"] = new JObject { ["type"] = "boolean", ["description"] = "Optional, default false: include non-public members." },
+                                ["includeInherited"] = new JObject { ["type"] = "boolean", ["description"] = "Optional, default false: also include members inherited from base types." },
+                                ["members"] = new JObject { ["type"] = "array", ["items"] = new JObject { ["type"] = "string", ["enum"] = new JArray("fields", "properties", "methods", "constructors") }, ["description"] = "Optional: which sections to include. Default: all." },
+                                ["memberFilter"] = Prop("string", "Optional: case-insensitive substring to filter member names by (before paging)."),
+                                ["range"] = Prop("string", $"Optional, default '1-{ReflectionTools.DefaultPageSize}': which numbered items each section should return, e.g. '31-42'.")
+                            },
+                            ["required"] = new JArray("typeName")
                         }
                     }
                 }
             });
         }
 
-        private const string TEST_TOOL_NAME = "test";
+        private const string LIST_ASSEMBLIES_TOOL_NAME = "list_assemblies";
+        private const string SEARCH_TYPES_TOOL_NAME = "search_types";
+        private const string INSPECT_TYPE_TOOL_NAME = "inspect_type";
 
         private static string BuildToolCallResponse(string idRaw, string name, JObject args)
         {
-            if (name != TEST_TOOL_NAME)
+            var a = (JObject)args ?? new JObject();
+
+            string text;
+            try
             {
-                // Unknown tool → invalid params error
-                return BuildErrorJson(idRaw, -32602, $"Unknown tool: {name}");
+                switch (name)
+                {
+                case LIST_ASSEMBLIES_TOOL_NAME:
+                    text = ReflectionTools.ListAssemblies();
+                    break;
+
+                case SEARCH_TYPES_TOOL_NAME:
+                    text = ReflectionTools.SearchTypes(
+                        a["query"]?.Value<string>(),
+                        a["kind"]?.Value<string>(),
+                        a["assembly"]?.Value<string>(),
+                        a["derivedFrom"]?.Value<string>(),
+                        a["includePrivate"]?.Value<bool>() ?? false,
+                        a["range"]?.Value<string>());
+                    break;
+
+                case INSPECT_TYPE_TOOL_NAME:
+                    text = ReflectionTools.InspectType(
+                        a["typeName"]?.Value<string>(),
+                        a["includePrivate"]?.Value<bool>() ?? false,
+                        a["includeInherited"]?.Value<bool>() ?? false,
+                        a["members"] is JArray mar ? mar.Select(x => x.Value<string>()).ToList() : null,
+                        a["memberFilter"]?.Value<string>(),
+                        a["range"]?.Value<string>());
+                    break;
+
+                default:
+                    return BuildErrorJson(idRaw, -32602, $"Unknown tool: {name}");
+                }
+            }
+            catch (Exception e)
+            {
+                return BuildResultJson(idRaw, new JObject
+                {
+                    ["content"] = new JArray { new JObject { ["type"] = "text", ["text"] = e.Message } },
+                    ["isError"] = true
+                });
             }
 
-            var message = "OK — ReflectionInspector MCP server is running. (" + DateTime.Now.ToString("u") + ")";
             return BuildResultJson(idRaw, new JObject
             {
-                ["content"] = new JArray
-                {
-                    new JObject
-                    {
-                        ["type"] = "text",
-                        ["text"] = message
-                    }
-                },
+                ["content"] = new JArray { new JObject { ["type"] = "text", ["text"] = text } },
                 ["isError"] = false
             });
         }
