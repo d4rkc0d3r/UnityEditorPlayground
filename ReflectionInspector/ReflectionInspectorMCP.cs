@@ -1,7 +1,5 @@
 #if UNITY_EDITOR
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -20,6 +18,10 @@ namespace d4rkpl4y3r.ReflectionInspector
         static HttpListener _listener;
         static CancellationTokenSource _cts;
         static int _port = 8251;
+
+        private const string LIST_ASSEMBLIES_TOOL_NAME = "list_assemblies";
+        private const string SEARCH_TYPES_TOOL_NAME = "search_types";
+        private const string INSPECT_TYPE_TOOL_NAME = "inspect_type";
         
         [InitializeOnLoad]
         private class OnLoadHook
@@ -204,10 +206,8 @@ namespace d4rkpl4y3r.ReflectionInspector
             });
         }
 
-        private static JObject Prop(string type) => new JObject { ["type"] = type };
-
         private static JObject Prop(string type, string description) =>
-            new JObject { ["type"] = type, ["description"] = description };
+            new() { ["type"] = type, ["description"] = description };
 
         private static string BuildToolsList(string idRaw)
         {
@@ -262,10 +262,6 @@ namespace d4rkpl4y3r.ReflectionInspector
                 }
             });
         }
-
-        private const string LIST_ASSEMBLIES_TOOL_NAME = "list_assemblies";
-        private const string SEARCH_TYPES_TOOL_NAME = "search_types";
-        private const string INSPECT_TYPE_TOOL_NAME = "inspect_type";
 
         private static string BuildToolCallResponse(string idRaw, string name, JObject args)
         {

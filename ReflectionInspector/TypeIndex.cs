@@ -15,9 +15,9 @@ namespace d4rkpl4y3r.ReflectionInspector
     public class TypeEntry
     {
         public Type Type;
-        public string Name;          // simple name
+        public string Name;
         public string FullName;
-        public string Kind;          // Class / Struct / Enum / Interface
+        public string Kind; // Class / Struct / Enum / Interface
         public string AssemblyName;
     }
 
@@ -61,7 +61,7 @@ namespace d4rkpl4y3r.ReflectionInspector
             }
             catch (ReflectionTypeLoadException e)
             {
-                // SDK / plugin DLLs occasionally have unloadable generic deps.
+                // SDK / plugin DLLs occasionally have un-loadable generic deps.
                 types = e.Types.Where(t => t != null).ToArray();
             }
 
@@ -89,8 +89,7 @@ namespace d4rkpl4y3r.ReflectionInspector
         /// <summary>All type entries of all assemblies (lazily built, cached).</summary>
         public static List<TypeEntry> GetAllTypes()
         {
-            if (s_all == null)
-                s_all = GetAssemblies().SelectMany(e => GetTypeEntries(e.Assembly)).ToList();
+            s_all ??= GetAssemblies().SelectMany(e => GetTypeEntries(e.Assembly)).ToList();
             return s_all;
         }
 

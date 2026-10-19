@@ -56,7 +56,8 @@ namespace d4rkpl4y3r.ReflectionInspector
                 baseType = ResolveSingleType(derivedFrom);
             }
 
-            var (matchFullName, matchSimple) = ClassifyQuery(query);
+            // Queries containing '.' match the full name, otherwise the simple name.
+            var matchFullName = query.Contains('.');
 
             var hits = new List<TypeEntry>();
             foreach (var e in TypeIndex.GetAllTypes())
@@ -70,7 +71,7 @@ namespace d4rkpl4y3r.ReflectionInspector
                     continue;
                 if (baseType != null && !baseType.IsAssignableFrom(e.Type))
                     continue;
-                if ((matchFullName ? queryRx.IsMatch(e.FullName ?? "") : queryRx.IsMatch(e.Name)))
+                if (matchFullName ? queryRx.IsMatch(e.FullName ?? "") : queryRx.IsMatch(e.Name))
                     hits.Add(e);
             }
 
@@ -111,12 +112,12 @@ namespace d4rkpl4y3r.ReflectionInspector
             if (type.BaseType != null)
                 sb.Append("Base: ").Append(FormatType(type.BaseType)).Append('\n');
             sb.Append("Inheritance: ").Append(FormatInheritanceChain(type)).Append('\n');
-            var allIfaces = type.GetInterfaces();
-            var ifaces = allIfaces
-                .Where(t => !allIfaces.Any(i => i.IsAssignableFrom(t))) // direct only
+            var allInterfaces = type.GetInterfaces();
+            var interfaces = allInterfaces
+                .Where(t => !allInterfaces.Any(i => i.IsAssignableFrom(t))) // direct only
                 .Select(FormatType).OrderBy(n => n, StringComparer.Ordinal);
-            if (ifaces.Any())
-                sb.Append("Implements: ").Append(string.Join(", ", ifaces)).Append('\n');
+            if (interfaces.Any())
+                sb.Append("Implements: ").Append(string.Join(", ", interfaces)).Append('\n');
             var typeAttrs = FormatAttributes(type.GetCustomAttributesData());
             if (typeAttrs != null)
                 sb.Append("Attributes: ").Append(typeAttrs).Append('\n');
@@ -146,8 +147,7 @@ namespace d4rkpl4y3r.ReflectionInspector
             // full superset and filter own-vs-inherited and visibility ourselves.
             var memberFlags = BindingFlags.Instance | BindingFlags.Static
                 | BindingFlags.Public | BindingFlags.NonPublic;
-            bool own(Type d) => d == type;
-            bool ownOrInherited(Type d) => includeInherited || own(d);
+            bool ownOrInherited(Type d) => includeInherited || d == type;
 
             // --- fields ---
             if (want("fields"))
@@ -160,7 +160,7 @@ namespace d4rkpl4y3r.ReflectionInspector
                     .ToList();
                 AppendPagedSection(sb, "Fields", all, start, end, f =>
                 {
-                    var s = FormatType(f.FieldType) + " " + f.Name;
+                    var s = $"{FormatType(f.FieldType)} {f.Name}";
                     var flags = new List<string>();
                     if (f.IsStatic) flags.Add("static");
                     if (f.IsInitOnly) flags.Add("readonly");
@@ -170,12 +170,12 @@ namespace d4rkpl4y3r.ReflectionInspector
                         try
                         {
                             var v = f.GetRawConstantValue();
-                            s += " = " + (v is string str ? "\"" + str + "\"" : v?.ToString() ?? "null");
+                            s += $" = {(v is string str ? $"\"{str}\"" : v?.ToString() ?? "null")}";
                         }
                         catch { }
                     }
-                    if (flags.Count > 0) s = string.Join(" ", flags) + " " + s;
-                    if (!f.IsPublic) s += " [" + VisibilityOf(f) + "]";
+                    if (flags.Count > 0) s = $"{string.Join(" ", flags)} {s}";
+                    if (!f.IsPublic) s += $" [{VisibilityOf(f)}]";
                     return s;
                 });
             }
@@ -218,8 +218,7 @@ namespace d4rkpl4y3r.ReflectionInspector
             // --- constructors ---
             if (want("constructors"))
             {
-                var all = type.GetConstructors(BindingFlags.Instance | BindingFlags.Static
-                        | BindingFlags.Public | BindingFlags.NonPublic)
+                var all = type.GetConstructors(memberFlags)
                     .Where(m => m.IsPublic || includePrivate)
                     .OrderBy(m => m.GetParameters().Length)
                     .ToList();
@@ -305,12 +304,6 @@ namespace d4rkpl4y3r.ReflectionInspector
             return resolved[0];
         }
 
-        /// <summary>Matches against the full name when the query contains '.', otherwise against the simple name.</summary>
-        static (bool matchFullName, bool matchSimple) ClassifyQuery(string query)
-        {
-            return (query.Contains('.'), !query.Contains('.'));
-        }
-
         static string FormatInheritanceChain(Type type)
         {
             var chain = new List<string>();
@@ -339,7 +332,7 @@ namespace d4rkpl4y3r.ReflectionInspector
                 sb.Append(FormatType(mi.ReturnType)).Append(' ');
             sb.Append(m.Name).Append('(')
               .Append(string.Join(", ", m.GetParameters().Select(p =>
-                  FormatType(p.ParameterType) + " " + p.Name))).Append(')');
+                  $"{FormatType(p.ParameterType)} {p.Name}"))).Append(')');
             if (!m.IsPublic)
                 sb.Append(" [").Append(VisibilityOf(m)).Append(']');
             return sb.ToString();
@@ -363,24 +356,24 @@ namespace d4rkpl4y3r.ReflectionInspector
 
         /// <summary>
         /// Unambiguous type name: namespace-qualified for non-generics (Nested types use '+'),
-        /// anglebracket form for generics, ref and array suffixes included.
+        /// angle bracket form for generics, ref and array suffixes included.
         /// </summary>
         public static string FormatType(Type t)
         {
             if (t == null) return "void";
-            if (t.IsByRef) return FormatType(t.GetElementType()) + " ref";
+            if (t.IsByRef) return $"{FormatType(t.GetElementType())} ref";
             if (t.IsArray)
             {
                 int rank = t.GetArrayRank();
-                return FormatType(t.GetElementType()) + "[" + new string(',', rank - 1) + "]";
+                return $"{FormatType(t.GetElementType())}[{new string(',', rank - 1)}]";
             }
             var @namespace = t.Namespace;
             if (!t.IsGenericType)
-                return (@namespace != null ? @namespace + "." : "") + t.Name;
+                return @namespace != null ? $"{@namespace}.{t.Name}" : t.Name;
             // Generic: Name is "List`1" (or "Outer+Inner`1" when nested) — strip arity, prefix namespace.
-            var name = t.Name.Substring(0, t.Name.IndexOf('`'));
-            if (@namespace != null) name = @namespace + "." + name;
-            return name + "<" + string.Join(", ", t.GetGenericArguments().Select(FormatType)) + ">";
+            var name = t.Name[..t.Name.IndexOf('`')];
+            if (@namespace != null) name = $"{@namespace}.{name}";
+            return $"{name}<{string.Join(", ", t.GetGenericArguments().Select(FormatType))}>";
         }
 
         /// <summary>Custom attribute summary; skips pure-System attributes. Null when nothing to show.</summary>
@@ -393,14 +386,14 @@ namespace d4rkpl4y3r.ReflectionInspector
                 var ns = declaring?.Namespace ?? "";
                 if (ns == "System" || ns.StartsWith("System."))
                     continue;
-                var tname = declaring.Name;
-                if (tname.EndsWith("`1"))
-                    tname = tname.Substring(0, tname.LastIndexOf('`', 0) + 1) + "<>";
-                if (tname.EndsWith("Attribute"))
-                    tname = tname.Substring(0, tname.Length - "Attribute".Length);
+                var tName = declaring.Name;
+                if (tName.EndsWith("`1"))
+                    tName = $"{tName[..tName.LastIndexOf('`')]}<>";
+                if (tName.EndsWith("Attribute"))
+                    tName = tName[..^"Attribute".Length];
                 if (a.ConstructorArguments.Count > 0)
-                    tname += "(" + string.Join(", ", a.ConstructorArguments.Select(FormatArg)) + ")";
-                parts.Add(tname);
+                    tName += $"({string.Join(", ", a.ConstructorArguments.Select(FormatArg))})";
+                parts.Add(tName);
             }
             return parts.Count > 0 ? string.Join(", ", parts) : null;
         }
@@ -410,7 +403,7 @@ namespace d4rkpl4y3r.ReflectionInspector
             switch (arg.Value)
             {
                 case null: return "null";
-                case string s: return "\"" + s + "\"";
+                case string s: return $"\"{s}\"";
                 case Type t: return t.Name;
                 default: return arg.Value.ToString();
             }
