@@ -38,13 +38,11 @@ namespace d4rkpl4y3r.ReflectionInspector
         {
             Stop();
             _cts = new CancellationTokenSource();
-            Application.quitting += Stop;
             _ = RunLoop(_cts.Token);
         }
 
         public static void Stop()
         {
-            Application.quitting -= Stop;
             if (_running)
             {
                 _running = false;
@@ -77,7 +75,12 @@ namespace d4rkpl4y3r.ReflectionInspector
                 if (ct.IsCancellationRequested) return; /* shutdown: listener closed on purpose */
                 Debug.LogError($"[ReflectionInspectorMCP] Failed to start listener on port {_port}: {e.Message}");
             }
-            finally { _listener.Close(); }
+            finally
+            {
+                _running = false;
+                try { _listener.Close(); } catch { }
+                _listener = null;
+            }
         }
 
         private static async Task HandleJsonRpcAsync(HttpListenerContext ctx)
@@ -97,7 +100,7 @@ namespace d4rkpl4y3r.ReflectionInspector
                 }
                 catch (Exception e)
                 {
-                    Debug.LogWarning($"[ReflectionInspectorMCP] Failed to parse request body: {e.Message}");
+                    Debug.LogWarning($"[ReflectionInspectorMCP] Failed to parse request body: {e.Message}\n{new string(body.Take(1000).ToArray())}");
                     SendHttp(ctx, 400, BuildErrorJson(null, -32700, "Parse error"));
                     return;
                 }
