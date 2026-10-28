@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,7 +18,7 @@ namespace d4rkpl4y3r.ReflectionInspector
     {
         static HttpListener _listener;
         static CancellationTokenSource _cts;
-        static int _port = 8251;
+        static int _port = 8252;
         static bool _running;
 
         private const string LIST_ASSEMBLIES_TOOL_NAME = "list_assemblies";
@@ -38,11 +39,13 @@ namespace d4rkpl4y3r.ReflectionInspector
         {
             Stop();
             _cts = new CancellationTokenSource();
+            Application.quitting += Stop;
             _ = RunLoop(_cts.Token);
         }
 
         public static void Stop()
         {
+            Application.quitting -= Stop;
             if (_running)
             {
                 _running = false;
@@ -54,10 +57,10 @@ namespace d4rkpl4y3r.ReflectionInspector
 
         private static async Task RunLoop(CancellationToken ct)
         {
-            _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://localhost:{_port}/");
             try
             {
+                _listener = new HttpListener();
+                _listener.Prefixes.Add($"http://localhost:{_port}/");
                 _listener.Start();
                 _running = true;
                 Debug.Log($"[ReflectionInspectorMCP] Listening on http://localhost:{_port}/");
@@ -74,6 +77,11 @@ namespace d4rkpl4y3r.ReflectionInspector
             {
                 if (ct.IsCancellationRequested) return; /* shutdown: listener closed on purpose */
                 Debug.LogError($"[ReflectionInspectorMCP] Failed to start listener on port {_port}: {e.Message}");
+            }
+            catch (SocketException e)
+            {
+                if (ct.IsCancellationRequested) return; /* shutdown: listener closed, GetContextAsync interrupted */
+                Debug.LogError($"[ReflectionInspectorMCP] Socket error on port {_port}: {e.SocketErrorCode}\n{e.Message}");
             }
             finally
             {
