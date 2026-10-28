@@ -37,15 +37,16 @@ namespace d4rkpl4y3r.ReflectionInspector
 
         public static void Start()
         {
-            Stop();
+            if (_running)
+                return;
             _cts = new CancellationTokenSource();
-            Application.quitting += Stop;
+            EditorApplication.quitting += Stop;
             _ = RunLoop(_cts.Token);
         }
 
         public static void Stop()
         {
-            Application.quitting -= Stop;
+            EditorApplication.quitting -= Stop;
             if (_running)
             {
                 _running = false;
